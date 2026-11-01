@@ -492,7 +492,7 @@ dialog.dlg-accueil .note-dlg{text-align:center}
   <div id="attente-voile"></div>
   <div id="attente-bas">
     <p id="attente-titre">Atelier Maquette Numérique</p>
-    <p id="attente-txt">chargement <b id="attente-pct">0 %</b><span id="attente-ver">version 9.67</span></p>
+    <p id="attente-txt">chargement <b id="attente-pct">0 %</b><span id="attente-ver">version 9.68</span></p>
     <div id="attente-licence" role="note">
       <p class="al-titre">Licence Creative Commons <b>CC BY-NC-SA 4.0</b></p>
       <p class="al-texte">Libre pour enseigner et apprendre, à trois conditions : citer l’auteur · pas d’usage commercial · partager les adaptations dans les mêmes conditions.</p>
@@ -14523,7 +14523,7 @@ function majBarreNiveaux(){
   if(!el) return;
   el.innerHTML = S.niveaux.map((n2, i) =>
     '<button data-stn="' + i + '" class="' + (i === S.nivActif ? "actif" : "") +
-    '" title="Activer ce niveau (PgUp / PgDn)">' + echap(n2.nom) + '</button>').join("");
+    '" title="Activer ce niveau (PgUp / PgDn) — double-clic : le renommer">' + echap(n2.nom) + '</button>').join("");
   el.querySelectorAll("[data-stn]").forEach(b2 => b2.onclick = () => {
     activerNiveau(+b2.dataset.stn);
     if(vue.mode !== "plan") changerVue("plan");
@@ -14672,9 +14672,7 @@ function pliagePanneau(){
     // le panneau d'un outil actif ou d'une sélection s'ouvre de lui-même
     if(toujoursOuvertes.test(texteH3) && !(cleSection(texteH3) in panneauReplie))
       panneauReplie[cleSection(texteH3)] = false;
-    if(/^propriétés$/i.test(texteH3) && toutesSelections().length &&
-       !(cleSection(texteH3) + "!sel" in panneauReplie))
-      h3.parentElement.dataset.autoOuvert = "1";
+    /* 9.68 : « Propriétés » ne s'ouvre plus d'elle-même — les chapitres sont fermés au départ (module 95) */
     const cle = cleSection(h3.textContent);
     let replie = sectionRepliee(cle);
     if(h3.parentElement.dataset.autoOuvert) replie = false;
@@ -105318,10 +105316,11 @@ if(typeof AUTOTESTS !== "undefined"){
         l'explique, et ne se saute pas avant 40 % (HTML de la page et
         fermeture de l'écran d'attente, posés par la greffe) ;
      2. le décompte de pourcentage va au moins jusqu'à 40 % (idem) ;
-     3. les propriétés d'un élément n'ouvrent plus le chapitre « Niveaux du
-        bâtiment » ;
+     3. le chapitre « Niveaux du bâtiment » disparaît de TOUTES les palettes
+        Propriétés (9.68 : il ne restait que sur la palette sans sélection) ;
      4. tous les chapitres de la palette Propriétés se replient — identification,
-        fiche produit, couche porteuse, linteau de la baie, descente de charges ;
+        fiche produit, couche porteuse, linteau de la baie, descente de charges —
+        et sont FERMÉS AU DÉPART (9.68) ;
      5. les files d'implantation se posent en biais, sur un mur en biais ou
         librement, en deux clics ;
      6. le descriptif des ouvrages se lit en fiches, lot par lot ;
@@ -105388,33 +105387,53 @@ cv.addEventListener("dblclick", function(e){
 /* ---------------------------------------------------------------------
    95.2 · LES PROPRIÉTÉS
    a) le chapitre « Niveaux du bâtiment » règle le projet, pas l'élément :
-      il ne s'ouvre plus quand un élément est sélectionné (murs, cloisons,
-      menuiseries, planchers…). Sans sélection, il est toujours là.
+      il disparaît de toutes les palettes (9.68 ; en 9.67 il ne partait que
+      sur un élément sélectionné). Le niveau actif se change au bas de
+      l'écran (le double-clic renomme), la hauteur d'un niveau se règle sur
+      sa ligne, en coupe ou en façade, où l'on peut aussi le supprimer.
    b) tous les chapitres se replient, comme « Propriétés ». Certains étaient
       posés après le passage de `pliagePanneau` — identification, fiche
       produit, couche porteuse, linteau de la baie, mode constructif — et
       restaient ouverts en permanence. Un observateur reprend le pliage à
-      chaque reconstruction du panneau ; un chapitre qui n'a jamais été
-      replié reste ouvert, il ne se ferme que sur le choix de l'élève.
+      chaque reconstruction du panneau.
+   c) (9.68) ILS SONT FERMÉS AU DÉPART : la première fois qu'un chapitre se
+      montre sur un élément sélectionné, il se ferme — y compris
+      « Propriétés », que l'application ouvrait d'elle-même, et ceux que les
+      modules de structure ouvraient par défaut. Ensuite il garde ce que
+      l'élève en a fait, jusqu'à la fermeture de l'application.
    --------------------------------------------------------------------- */
-(function(){
-  var _htmlNiveauxAvant95 = htmlNiveaux;
-  htmlNiveaux = function(){
-    try { if(outil === "selection" && toutesSelections().length) return ""; } catch(_e){}
-    return _htmlNiveauxAvant95.apply(this, arguments);
-  };
-})();
+htmlNiveaux = function(){ return ""; };
 
+var RT_VUS = {};                          // les chapitres déjà montrés pendant cette séance
+function rtCleChapitre(h3){
+  var sp = h3.querySelector(".arbo-plier"), t = h3.textContent;
+  if(sp && t.indexOf(sp.textContent) === 0) t = t.slice(sp.textContent.length);
+  return cleSection(t);
+}
 function rtPlierTousLesChapitres(){
   var pan = document.getElementById("panneau");
   if(!pan || typeof pliagePanneau !== "function") return;
   try {
+    /* 1 · ceux que personne n'avait rendus repliables : repliables, et fermés tant qu'on ne les a pas ouverts */
     pan.querySelectorAll(".section > h3").forEach(function(h3){
       if(h3.querySelector(".arbo-plier")) return;
       var cle = cleSection(h3.textContent);
-      if(!(cle in panneauReplie)) panneauReplie[cle] = false;       // ouvert, tant qu'on ne l'a pas replié
+      if(!(cle in panneauReplie)) panneauReplie[cle] = true;
     });
     pliagePanneau();
+    /* 2 · fermés au départ : la première fois qu'ils se montrent sur un élément sélectionné */
+    if(outil === "selection" && toutesSelections().length){
+      pan.querySelectorAll(".section > h3").forEach(function(h3){
+        var cle = rtCleChapitre(h3);
+        if(RT_VUS[cle]) return;
+        RT_VUS[cle] = true;
+        panneauReplie[cle] = true;
+        var sec = h3.parentElement, sp = h3.querySelector(".arbo-plier");
+        delete sec.dataset.autoOuvert;
+        sec.classList.add("replie");
+        if(sp){ sp.textContent = "+"; sp.title = "Déplier cette section"; }
+      });
+    }
   } catch(_e95b){}
 }
 (function(){
@@ -105787,6 +105806,45 @@ try {
   };
 } catch(_e95i){}
 
+/* ---------------------------------------------------------------------
+   95.6 · LES NIVEAUX, SANS LE CHAPITRE (9.68)
+
+   « Niveaux du bâtiment » n'existe plus dans les propriétés : ce que le
+   chapitre permettait reste possible ailleurs.
+     · activer un niveau : les boutons du bas de l'écran (PgUp / PgDn) ;
+     · le renommer : double-clic sur son bouton ;
+     · en régler la hauteur : cliquer sa ligne en coupe ou en façade — elle
+       a déjà sa fiche (nom, hauteur) dans la palette Propriétés ;
+     · le supprimer : le bouton « Supprimer le niveau… » de cette même fiche ;
+     · en créer un, ou en dupliquer un : les boutons « Niveau » du ruban.
+   --------------------------------------------------------------------- */
+(function(){
+  var barre = document.getElementById("st-niveaux");
+  if(!barre) return;
+  barre.addEventListener("dblclick", function(e){
+    var b = e.target && e.target.closest ? e.target.closest("[data-stn]") : null;
+    if(b) renommerNiveau(+b.dataset.stn);
+  });
+})();
+function rtBoutonSupprimerNiveau(){
+  if(!selection || selection.niveauLigne === undefined) return;
+  var props = document.getElementById("props");
+  if(!props || props.querySelector("#rt-niv-suppr")) return;
+  var i = selection.niveauLigne, n = S.niveaux[i];
+  if(!n) return;
+  props.insertAdjacentHTML("beforeend",
+    '<button class="btn-plein btn-danger" id="rt-niv-suppr" style="margin-top:6px">Supprimer le niveau « ' + echap(n.nom) + ' »…</button>');
+  document.getElementById("rt-niv-suppr").addEventListener("click", function(){ supprimerNiveau(i); });
+}
+try {
+  var _majPanneauAvant95b = majPanneau;
+  majPanneau = function(){
+    var r = _majPanneauAvant95b.apply(this, arguments);
+    try { rtBoutonSupprimerNiveau(); } catch(_e){}
+    return r;
+  };
+} catch(_e95k){}
+
 
 /* ---------------------------------------------------------------------
    95.4 · LE DESCRIPTIF EN FICHES
@@ -105808,6 +105866,7 @@ try {
    Rien ne change dans le document exporté ni dans les données.
    --------------------------------------------------------------------- */
 var RT_DESCR = {lot:null, ouvertes:{}};
+var rtSurvolPuce = null;
 function rtDescrVue(){
   try { var v = localStorage.getItem("amn-descriptif-vue"); if(v === "document" || v === "fiches") return v; } catch(_e){}
   return "fiches";
@@ -105849,7 +105908,8 @@ document.head.insertAdjacentHTML("beforeend", '<style>' +
   '.pdf-quoi{white-space:pre-wrap; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; color:var(--texte)}' +
   '.pdf-quoi[hidden]{display:none}' +
   '.pdf-niv{display:inline-block; margin:0 5px 3px 0; padding:0 7px; border-radius:3px; background:#e4ecf4; color:#2b5580; font-size:11px; font-weight:600}' +
-  '.pdf-rep{display:inline-block; margin:0 4px 3px 0; padding:0 6px; border:1px solid var(--bord2); border-radius:3px; background:#fafafa; font:11px Consolas,monospace}' +
+  '.pdf-rep{display:inline-block; margin:0 4px 3px 0; padding:0 6px; border:1px solid var(--bord2); border-radius:3px; background:#fafafa; color:inherit; font:11px Consolas,monospace; cursor:pointer}' +
+  '.pdf-rep:hover, .pdf-rep:focus-visible{border-color:var(--accent); background:var(--bleu-survol); color:var(--bleu)}' +
   '.pdf-etat{margin-left:2px; color:var(--ambre-sombre); font-size:10px}' +
   '.pdf-combien b{color:var(--texte)}' +
   '.pdf-actions{display:flex; gap:7px; margin-top:8px; padding-left:82px}' +
@@ -105887,7 +105947,10 @@ function rtDescrOu(L){
     var l = par[k], MAXI = 14;
     l.slice(0, MAXI).forEach(function(e){
       var hors = (e.etat && e.etat !== "neuf" && typeof ETATS === "object" && ETATS[e.etat]) ? ETATS[e.etat].court : "";
-      h += '<span class="pdf-rep">' + echap(e.rep || "—") + (hors ? '<span class="pdf-etat"> ' + echap(hors) + '</span>' : "") + '</span>';
+      /* une puce se survole (présélection dans le plan et dans la 3D) et se clique (sélection) */
+      h += '<button type="button" class="pdf-rep" data-pdf-rep="' + echap(e.rep || "") + '" data-pdf-niv="' + e.niv + '" data-pdf-kind="' + echap(L.kind) +
+           '" title="Survoler : présélection dans la maquette · cliquer : sélection">' + echap(e.rep || "—") +
+           (hors ? '<span class="pdf-etat"> ' + echap(hors) + '</span>' : "") + '</button>';
     });
     if(l.length > MAXI) h += '<span class="pdf-etat">et ' + (l.length - MAXI) + ' autres</span>';
     h += ' ';
@@ -105971,6 +106034,7 @@ function rtDescriptifFiches(force){
   }
   if(rtDescrVue() !== "fiches"){ zone.innerHTML = ""; return; }
 
+  if(rtSurvolPuce){ if(memeSel(survolSel, rtSurvolPuce)) survolSel = null; rtSurvolPuce = null; }
   var arts = articlesDescriptif(), avecPrix = S.descriptifPrix !== false;
   if(!arts.length){
     zone.innerHTML = '<div class="pdf-main"><p class="pdf-vide">La maquette est vide : aucun ouvrage à décrire. ' +
@@ -106029,6 +106093,28 @@ function rtDescriptifFiches(force){
       if(t) t.focus();
     });
   });
+  zone.querySelectorAll("[data-pdf-rep]").forEach(function(c){
+    var cible = function(){
+      var k = c.dataset.pdfKind, r = c.dataset.pdfRep, nv = +c.dataset.pdfNiv;
+      return tousElements().filter(function(e){ return e.kind === k && e.niv === nv && repereDe(e.obj) === r; })[0] || null;
+    };
+    c.addEventListener("mouseenter", function(){
+      var e = cible(); if(!e) return;
+      rtSurvolPuce = e.sel; survolSel = e.sel; dessiner();
+    });
+    c.addEventListener("mouseleave", function(){
+      if(!rtSurvolPuce) return;
+      if(memeSel(survolSel, rtSurvolPuce)) survolSel = null;
+      rtSurvolPuce = null; dessiner();
+    });
+    c.addEventListener("click", function(){
+      var e = cible(); if(!e) return;
+      rtSurvolPuce = null;
+      if(e.niv !== undefined && e.niv !== S.nivActif && S.niveaux[e.niv]) activerNiveau(e.niv);
+      viderSel(); selUnique(e.sel); majTout();
+      statut((decrisElement(e.sel) || "Ouvrage") + " — sélectionné depuis le descriptif (propriétés à gauche).");
+    });
+  });
   zone.querySelectorAll("[data-pdf-voir]").forEach(function(b){
     b.addEventListener("click", function(){ rtDescrSelectionner(b.dataset.pdfVoir); });
   });
@@ -106080,40 +106166,68 @@ function rtEssaiMur(n, x1, y1, x2, y2, cat){
 }
 if(typeof AUTOTESTS !== "undefined"){
   AUTOTESTS.push({
-    nom:"9.67 · Propriétés : plus de « Niveaux du bâtiment » sur un élément sélectionné (il reste sans sélection), tous les chapitres se replient",
+    nom:"9.68 · Propriétés : « Niveaux du bâtiment » n'existe plus, tous les chapitres se replient et sont fermés au départ",
+    f:function(){
+      return rtEssaiScene(function(n){
+        var r = [], pan = document.getElementById("panneau"), vus0 = RT_VUS, rep0 = panneauReplie;
+        RT_VUS = {}; panneauReplie = {"__defaut": true};              // « au départ » : une séance toute neuve
+        try {
+          var m = rtEssaiMur(n, 0, 0, 6, 0);
+          var o = {id:uid(), type:"fenetre", pos:1.5, l:1.2, h:1.25, allege:0.95, mat:"PVC"};
+          m.ouvertures.push(o);
+          var c = rtEssaiMur(n, 0, 0, 0, 4, "cloison");
+          if(htmlNiveaux() !== "") r.push("htmlNiveaux() rend encore du HTML");
+          var chapitres = function(){
+            rtPlierTousLesChapitres();
+            return Array.prototype.map.call(pan.querySelectorAll(".section > h3"), function(h){
+              return {txt:h.textContent.replace(/^[+−-]/, "").trim(), plie:!!h.querySelector(".arbo-plier"), ferme:h.parentElement.classList.contains("replie")};
+            });
+          };
+          var verifier = function(quoi){
+            var t = chapitres();
+            if(!t.length) r.push(quoi + " : aucun chapitre");
+            t.forEach(function(x){
+              if(/^Niveaux du bâtiment/i.test(x.txt)) r.push(quoi + " : « Niveaux du bâtiment » est encore là");
+              if(!x.plie) r.push(quoi + " : le chapitre « " + x.txt + " » ne se replie pas");
+              else if(!x.ferme) r.push(quoi + " : le chapitre « " + x.txt + " » est ouvert au départ");
+            });
+            return t;
+          };
+          viderSel(); majPanneau(); verifier("sans sélection");
+          outil = "porteur"; majPanneau(); chapitres().forEach(function(x){ if(/^Niveaux du bâtiment/i.test(x.txt)) r.push("outil Mur : « Niveaux du bâtiment » est encore là"); });
+          outil = "selection";
+          selUnique({murId:m.id}); majPanneau(); verifier("un mur");
+          selUnique({murId:c.id}); majPanneau(); verifier("une cloison");
+          selUnique({murId:m.id, ouvId:o.id}); majPanneau();
+          var t = verifier("une fenêtre");
+          if(!t.some(function(x){ return /^Linteau de la baie/.test(x.txt); })) r.push("une fenêtre : le chapitre « Linteau de la baie » manque");
+          /* un chapitre se rouvre d'un clic, se referme, et garde ce que l'élève en a fait d'un élément à l'autre */
+          var h3 = Array.prototype.filter.call(pan.querySelectorAll(".section > h3"), function(h){ return /Linteau de la baie/.test(h.textContent); })[0];
+          if(h3){
+            var sec = h3.parentElement, sp = h3.querySelector(".arbo-plier");
+            sp.click();
+            if(sec.classList.contains("replie")) r.push("un clic sur le carré n'ouvre pas « Linteau de la baie »");
+            selUnique({murId:c.id}); majPanneau(); chapitres();
+            selUnique({murId:m.id, ouvId:o.id}); majPanneau(); chapitres();
+            var h4 = Array.prototype.filter.call(pan.querySelectorAll(".section > h3"), function(h){ return /Linteau de la baie/.test(h.textContent); })[0];
+            if(!h4 || h4.parentElement.classList.contains("replie")) r.push("« Linteau de la baie » s'est refermé tout seul en changeant d'élément");
+            if(h4){ h4.querySelector(".arbo-plier").click(); if(!h4.parentElement.classList.contains("replie")) r.push("un second clic ne referme pas « Linteau de la baie »"); }
+          }
+        } finally { RT_VUS = vus0; panneauReplie = rep0; }
+        return r;
+      });
+    }});
+  AUTOTESTS.push({
+    nom:"9.68 · Niveaux : la fiche d'une ligne de niveau porte « Supprimer le niveau… », l'application n'a plus de chapitre pour eux",
     f:function(){
       return rtEssaiScene(function(n){
         var r = [], pan = document.getElementById("panneau");
-        var m = rtEssaiMur(n, 0, 0, 6, 0);
-        var o = {id:uid(), type:"fenetre", pos:1.5, l:1.2, h:1.25, allege:0.95, mat:"PVC"};
-        m.ouvertures.push(o);
-        rtEssaiMur(n, 0, 0, 0, 4, "cloison");
-        var titres = function(){ rtPlierTousLesChapitres(); return Array.prototype.map.call(pan.querySelectorAll(".section > h3"), function(h){
-          return {txt:h.textContent.replace(/^[+−-]/, "").trim(), plie:!!h.querySelector(".arbo-plier")}; }); };
-        var verifier = function(quoi, attendNiveaux){
-          var t = titres();
-          var niv = t.some(function(x){ return /^Niveaux du bâtiment/i.test(x.txt); });
-          if(attendNiveaux && !niv) r.push(quoi + " : « Niveaux du bâtiment » devrait être là");
-          if(!attendNiveaux && niv) r.push(quoi + " : « Niveaux du bâtiment » ne devrait plus s'ouvrir");
-          t.forEach(function(x){ if(!x.plie) r.push(quoi + " : le chapitre « " + x.txt + " » ne se replie pas"); });
-          return t;
-        };
-        viderSel(); majPanneau(); verifier("sans sélection", true);
-        selUnique({murId:m.id}); majPanneau(); verifier("un mur", false);
-        selUnique({murId:n.murs[1].id}); majPanneau(); verifier("une cloison", false);
-        selUnique({murId:m.id, ouvId:o.id}); majPanneau();
-        var t = verifier("une fenêtre", false);
-        if(!t.some(function(x){ return /^Linteau de la baie/.test(x.txt); })) r.push("une fenêtre : le chapitre « Linteau de la baie » manque");
-        /* un chapitre replié l'est vraiment, et se rouvre */
-        var h3 = Array.prototype.filter.call(pan.querySelectorAll(".section > h3"), function(h){ return /Linteau de la baie/.test(h.textContent); })[0];
-        if(h3){
-          var sec = h3.parentElement, sp = h3.querySelector(".arbo-plier");
-          if(sec.classList.contains("replie")) r.push("le chapitre « Linteau de la baie » devrait être ouvert tant qu'on ne l'a pas replié");
-          sp.click();
-          if(!sec.classList.contains("replie")) r.push("un clic sur le carré ne replie pas « Linteau de la baie »");
-          sp.click();
-          if(sec.classList.contains("replie")) r.push("un second clic ne rouvre pas « Linteau de la baie »");
-        }
+        rtEssaiMur(n, 0, 0, 6, 0);
+        selUnique({niveauLigne:0}); majPanneau();
+        if(!document.getElementById("rt-niv-suppr")) r.push("pas de bouton « Supprimer le niveau… » sur la fiche d'une ligne de niveau");
+        if(pan.querySelector("#liste-niv")) r.push("la liste des niveaux est encore dans les propriétés");
+        viderSel(); majPanneau();
+        if(document.getElementById("rt-niv-suppr")) r.push("le bouton « Supprimer le niveau… » reste sans ligne de niveau sélectionnée");
         return r;
       });
     }});
@@ -106202,6 +106316,19 @@ if(typeof AUTOTESTS !== "undefined"){
                 if(!raz) r.push("pas de retour au texte automatique");
                 else { raz.click(); if(descriptifEtat()[cle]) r.push("le retour au texte automatique ne vide pas le texte"); }
               }
+            }
+            /* une puce du « Où ? » se survole (présélection) et se clique (sélection) */
+            var puce = el.querySelector("#pd-fiches .pdf-carte [data-pdf-rep]");
+            if(!puce) r.push("pas de puce de repère dans le « Où ? »");
+            else {
+              viderSel();
+              puce.dispatchEvent(new MouseEvent("mouseenter"));
+              if(!survolSel) r.push("survoler une puce ne présélectionne rien");
+              puce.dispatchEvent(new MouseEvent("mouseleave"));
+              if(survolSel) r.push("la présélection reste après le survol de la puce");
+              puce.click();
+              if(!toutesSelections().length) r.push("cliquer une puce ne sélectionne rien");
+              viderSel();
             }
             var voir = el.querySelector("#pd-fiches [data-pdf-voir]");
             if(!voir) r.push("pas de bouton « Montrer dans la maquette »");
@@ -112111,14 +112238,11 @@ TQ.missions.ch6 = {
 
     {cible:() => {
        if(!c6Etage()) return $('[data-action="niveau-vide"]');
-       const h = $$("[data-niv-h]").find(x => x.dataset.nivH === "1" && visibleEl(x));
-       if(h) return h;
-       const pal = $("#palette"); if(pal && pal.getBoundingClientRect().right < 40) return $("#tiroir-g");
-       return $$("#panneau .section h3").find(x => /Niveaux du bâtiment/i.test(x.textContent)) || null;
+       return $('#st-niveaux [data-stn="1"]') || null;
      }, voile:false,
      dit:() => !c6Etage()
        ? "Crée l’<b>étage</b> : clique sur <b>Niveau</b> dans le ruban. Dans la fenêtre, nomme-le « Étage » et règle sa <b>hauteur à 2,50 m</b>."
-       : "L’étage existe, mais sa hauteur fait " + fr(S.niveaux[1].h, 2) + " m. Corrige-la à <b>2,50 m</b> : panneau Propriétés, section « Niveaux du bâtiment » (elle s’ouvre quand rien n’est sélectionné : clique dans le vide).",
+       : "L’étage existe, mais sa hauteur fait " + fr(S.niveaux[1].h, 2) + " m. Corrige-la à <b>2,50 m</b> : passe en vue <b>Coupe</b> ou <b>Façade</b>, clique la <b>ligne du niveau</b> « Étage », puis règle sa <b>hauteur</b> dans le panneau Propriétés.",
      indice:"Bouton « Niveau » (onglet Architecture, groupe Niveaux). La fenêtre demande un nom et une hauteur : 2,50.",
      bravo:"L’étage existe : le plan affiche maintenant ce niveau, vide.",
      ok:() => c6Etage() && Math.abs(S.niveaux[1].h - 2.5) < 0.011},
